@@ -53,16 +53,6 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
             ReferenceCountUtil.release(msg);
         }
 
-//        System.out.println("Получено сообщение: " + s);
-//        if (s.startsWith("/")) {
-//            if (s.startsWith("/changename ")) { // /changename myname1
-//                String newNickname = s.split("\\s", 2)[1];
-//                broadcastMessage("SERVER", "Клиент " + clientName + " сменил ник на " + newNickname);
-//                clientName = newNickname;
-//            }
-//            return;
-//        }
-//        broadcastMessage(clientName, s);
     }
 
     //обрабатываем поступившее сообшение в зависимости от класса
@@ -94,18 +84,19 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
     //получаем файл в виде объекта, записываем его в хранилище, в папку пользователя
     private void saveFileToStorage(FileTransferMsg msg) {
 
-        String currentFolderPath = "server/filestorage";
+        String currentFolderPath = "server\\filestorage";
         //получаем путь файла из локального хранилища
         Path filePath = Paths.get(msg.getPath());
 
-        //отбрасываем корневой каталог из локального хранилища
-        String relPath = filePath.subpath(1, filePath.getNameCount()).toString();
-
-        //складываем пути
-        Path newFilePath = Paths.get(currentFolderPath + "/" + relPath);
+//        //отбрасываем корневой каталог из локального хранилища
+//        String relPath = filePath.subpath(1, filePath.getNameCount()).toString();
+//
+//        //складываем пути
+//        Path newFilePath = Paths.get(currentFolderPath + "\\" + relPath);
+        Path newFilePath = Paths.get(currentFolderPath + "\\" + filePath.getFileName().toString());
 
         //создаем файл в облачном хранилище
-        fsWorker.mkFile(newFilePath, msg.getData());
+        fsWorker.mkFile(newFilePath, msg.getData(),msg.getislast(),msg.getisFirst());
 
     }
 
@@ -118,6 +109,7 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        System.out.println(cause.toString());
         System.out.println("Клиент " + clientName + " отвалился");
         channels.remove(ctx.channel());
         ctx.close();

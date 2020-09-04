@@ -1,15 +1,27 @@
 package netstorage.client;
 
+import common.FSWorker;
 import io.netty.handler.codec.serialization.ObjectDecoderInputStream;
 import io.netty.handler.codec.serialization.ObjectEncoderOutputStream;
+import messges.AbstractMsg;
+import messges.FileTransferMsg;
 
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
+
 
 public class Network {
 
-    private static String HOST;
-    private static int PORT;
+    private String HOST;
+    private int PORT;
+    private static int bufferSize;
+    private FSWorker fsWorker;
 
     public boolean isConnected;
 
@@ -20,7 +32,7 @@ public class Network {
     public Network(String HOST, int PORT) {
             this.HOST = HOST;
             this.PORT = PORT;
-
+            fsWorker = new FSWorker();
     }
 
     public boolean connect() {
@@ -59,6 +71,9 @@ public class Network {
     }
 
     public void sendMessage(String str) {
-//        channel.writeAndFlush(str);
+
+        Path path = Paths.get( "client\\clientstorage\\"+str);
+        fsWorker.sendFileInParts(oeos,path);
+
     }
 }

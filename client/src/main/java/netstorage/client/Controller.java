@@ -35,6 +35,7 @@ public class Controller implements Initializable {
     }
 
     public void sendMsgAction(ActionEvent actionEvent) {
+         network.sendMessage("Privet.txt");
 //        network.sendMessage(msgField.getText());
 //        msgField.clear();
 //        msgField.requestFocus();
@@ -46,7 +47,6 @@ public class Controller implements Initializable {
     }
 
     public void onMousePresset(MouseEvent mouseEvent) {
-
 //        String selectedItem = listView.getSelectionModel().getSelectedItem();
 //        String[] arr = selectedItem.split("[|]");
 //        msgField.setText("/upload | "+ arr[0]);
