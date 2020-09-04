@@ -1,5 +1,6 @@
 package common;
 
+import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.serialization.ObjectEncoderOutputStream;
 import messges.AbstractMsg;
 import messges.FileTransferMsg;
@@ -237,6 +238,48 @@ public class FSWorker {
                     outObject = new FileTransferMsg(path,buffer,isLast,i == 1);
                 }
                 oeos.writeObject(outObject);
+            }
+            isFile.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+    public void sendFileInParts(ChannelHandlerContext ctx, Path path){
+
+        try {
+            InputStream isFile = new FileInputStream(path.toString());
+
+            long fileSize = Files.size(path);
+            long lastPackage;
+            if(fileSize%bufferSize > 0){
+                lastPackage = fileSize/bufferSize +1;
+            }else{
+                lastPackage = fileSize/bufferSize;
+            }
+
+
+            byte[] buffer = new byte[bufferSize];
+            int count = 0;
+            int i= 0;
+            while ((count = isFile.read(buffer)) != -1) {
+                i++;
+                boolean isLast;
+
+                if (lastPackage == i){
+                    isLast = true;
+                }else{
+                    isLast = false;
+                }
+
+                AbstractMsg outObject;
+
+                if (count < bufferSize){
+                    outObject = new FileTransferMsg(path, Arrays.copyOfRange(buffer, 0, count),isLast, i==1);
+                }else{
+                    outObject = new FileTransferMsg(path,buffer,isLast,i == 1);
+                }
+                ctx.writeAndFlush(outObject);
             }
             isFile.close();
         } catch (IOException e) {

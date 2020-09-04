@@ -27,6 +27,7 @@ public class Controller implements Initializable {
 
         network = new Network("localhost", 8189);
         network.connect();
+        network.startReadingThread(this);
 
 
 //        network = new Network((args) -> {
@@ -35,7 +36,13 @@ public class Controller implements Initializable {
     }
 
     public void sendMsgAction(ActionEvent actionEvent) {
-         network.sendMessage("Privet.txt");
+        //Отравка файла
+        //network.sendFile("Privet.txt");
+
+        //Загрузка файла
+        network.downloadFile("Privet1.txt");
+
+
 //        network.sendMessage(msgField.getText());
 //        msgField.clear();
 //        msgField.requestFocus();
