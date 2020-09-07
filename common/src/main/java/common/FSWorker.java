@@ -2,8 +2,8 @@ package common;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.serialization.ObjectEncoderOutputStream;
-import messges.AbstractMsg;
-import messges.FileTransferMsg;
+import messages.AbstractMsg;
+import messages.FileTransferMsg;
 
 import java.io.*;
 import java.nio.file.*;
@@ -12,43 +12,26 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class FSWorker {
+public  class FSWorker {
 
     /*
     Класс предназначен для работы с файловым хранилищем,
     описывает общие для клиентов и сервера методы.
     В конструкторе задаем корневой каталог.
     * */
+    private static FSWorker ourInstance = new FSWorker();
 
-    /*Поле предназначено для хранения корневого каталога.
-     * На клиенте - это будет его папка на HDD, для сервера - каталог,
-     * соответствующий nickname подключившегося клиента */
-    private String rootDir;
     private File to;
     private OutputStream osFile;
     private static int bufferSize = 50092;//2092;
 
-
-
-    /*Конструкторы*/
-    public FSWorker(String rootDir) {
-        this.rootDir = rootDir;
-    }
-
-    public FSWorker() {
+    private FSWorker() {
 
     }
 
-    /*
-     * Setter для установки значения поля - корневого каталога пользователя
-     * */
-    public void setRootDir(String rootDir) {
-        this.rootDir = rootDir;
+    public static FSWorker getInstance() {
+        return ourInstance;
     }
-
-    /*
-    Методы для работы с файлами и каталогами
-    * */
 
     /*
      * Просмотр содержимого каталога.
@@ -78,8 +61,7 @@ public class FSWorker {
         } catch (IOException e) {
             e.printStackTrace();
             System.out.println("Ошибка создания директории!");
-//                logger.error("Ошибка создания директории!");
-//                logger.error(e.getMessage());
+
         }
     }
 
@@ -113,20 +95,14 @@ public class FSWorker {
     }
 
     /*
-    Удаляем файл или каталог с файлами
+    Удаляем файл
     * */
     public void delFsObject(String fsObjectName) {
 
-        Path newPath = Paths.get(fsObjectName);
-        Path pathToDelete = Paths.get(rootDir, "\\",
-                newPath.subpath(2, newPath.getNameCount()).toString());
+        Path pathToDelete = Paths.get(fsObjectName);
 
-        if (Files.isDirectory(pathToDelete)) {
-            deleteDirectory(pathToDelete);
-
-        } else if (Files.isRegularFile(pathToDelete)) {
+        if (Files.isRegularFile(pathToDelete)) {
             deleteFileFromStorage(pathToDelete);
-
         }
     }
 
@@ -139,69 +115,7 @@ public class FSWorker {
         }
     }
 
-    //удаление каталога с файлами
-    private void deleteDirectory(Path pathToDelete) {
-//        try (Stream<Path> str = Files.list(pathToDelete)) {
-//            str.sorted(Comparator.reverseOrder())
-//                    .map(Path::toFile)
-//                    .forEach(File::delete);
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        //удалаяем сам пустой каталог
-//            //Files.delete(pathToDelete);
-//        }
 
-        try {
-            Files.walkFileTree(pathToDelete, new SimpleFileVisitor<Path>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    System.out.println("delete file: " + file.toString());
-                    Files.delete(file);
-                    return FileVisitResult.CONTINUE;
-                }
-
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                    Files.delete(dir);
-                    System.out.println("delete dir: " + dir.toString());
-                    return FileVisitResult.CONTINUE;
-                }
-            });
-        } catch (IOException e) {
-            e.printStackTrace();
-        }
-
-
-
-
-//        }
-//
-//        new Thread(() -> {
-//            try () {
-//                FileUtils.deleteDirectory(pathToDelete.toFile());
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }).start();
-
-//        fullFolderPath = rootDir + nickname;
-
-//        try {
-//            Files.walk(pathToDirToDelete, FileVisitOption.FOLLOW_LINKS)
-//                    .sorted(Comparator.reverseOrder())
-//                    .forEach(path -> {
-//                        try {
-//                            Files.delete(path);
-//                        } catch (IOException e) {
-//                            e.printStackTrace();
-//                        }
-//                    });
-//            //Files.delete(pathToDirToDelete);
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-    }
 
     public void sendFileInParts(ObjectEncoderOutputStream oeos, Path path){
 
@@ -245,6 +159,7 @@ public class FSWorker {
         }
 
     }
+
     public void sendFileInParts(ChannelHandlerContext ctx, Path path){
 
         try {
