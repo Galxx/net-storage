@@ -1,43 +1,37 @@
 package common;
 
-import java.io.IOException;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.handler.codec.serialization.ObjectEncoderOutputStream;
+import messages.AbstractMsg;
+import messages.FileTransferMsg;
+
+import java.io.*;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
-public class FSWorker {
+public  class FSWorker {
 
     /*
     Класс предназначен для работы с файловым хранилищем,
     описывает общие для клиентов и сервера методы.
     В конструкторе задаем корневой каталог.
     * */
+    private static FSWorker ourInstance = new FSWorker();
 
-    /*Поле предназначено для хранения корневого каталога.
-     * На клиенте - это будет его папка на HDD, для сервера - каталог,
-     * соответствующий nickname подключившегося клиента */
-    private String rootDir;
+    private File to;
+    private OutputStream osFile;
+    private static int bufferSize = 50092;//2092;
 
-    /*Конструкторы*/
-    public FSWorker(String rootDir) {
-        this.rootDir = rootDir;
-    }
-
-    public FSWorker() {
+    private FSWorker() {
 
     }
 
-    /*
-     * Setter для установки значения поля - корневого каталога пользователя
-     * */
-    public void setRootDir(String rootDir) {
-        this.rootDir = rootDir;
+    public static FSWorker getInstance() {
+        return ourInstance;
     }
-
-    /*
-    Методы для работы с файлами и каталогами
-    * */
 
     /*
      * Просмотр содержимого каталога.
@@ -67,25 +61,33 @@ public class FSWorker {
         } catch (IOException e) {
             e.printStackTrace();
             System.out.println("Ошибка создания директории!");
-//                logger.error("Ошибка создания директории!");
-//                logger.error(e.getMessage());
+
         }
     }
 
     /*
      * Создание файла
+     * через IO, т.к большиние файлы по NIO не проходят
      * */
-    public void mkFile(Path newFilePath, byte[] data) {
-        StandardOpenOption sOption;
-
-        if (Files.exists(newFilePath)) {
-            sOption = StandardOpenOption.TRUNCATE_EXISTING;
-        } else {
-            sOption = StandardOpenOption.CREATE;
-        }
+    public void mkFile(Path newFilePath, byte[] data, boolean isLast, boolean isFirst) {
 
         try {
-            Files.write(newFilePath, data, sOption);
+
+            if (isFirst){
+                to = new File(newFilePath.toString());
+                if (Files.exists(newFilePath)){
+                    to.delete();
+                }
+                osFile = new FileOutputStream(to);
+                osFile.write(data);
+            }else{
+               osFile.write(data);
+            }
+
+            if(isLast){
+                osFile.close();
+            }
+
         } catch (IOException e) {
             e.printStackTrace();
         }
@@ -93,20 +95,14 @@ public class FSWorker {
     }
 
     /*
-    Удаляем файл или каталог с файлами
+    Удаляем файл
     * */
     public void delFsObject(String fsObjectName) {
 
-        Path newPath = Paths.get(fsObjectName);
-        Path pathToDelete = Paths.get(rootDir, "\\",
-                newPath.subpath(2, newPath.getNameCount()).toString());
+        Path pathToDelete = Paths.get(fsObjectName);
 
-        if (Files.isDirectory(pathToDelete)) {
-            deleteDirectory(pathToDelete);
-
-        } else if (Files.isRegularFile(pathToDelete)) {
+        if (Files.isRegularFile(pathToDelete)) {
             deleteFileFromStorage(pathToDelete);
-
         }
     }
 
@@ -119,66 +115,92 @@ public class FSWorker {
         }
     }
 
-    //удаление каталога с файлами
-    private void deleteDirectory(Path pathToDelete) {
-//        try (Stream<Path> str = Files.list(pathToDelete)) {
-//            str.sorted(Comparator.reverseOrder())
-//                    .map(Path::toFile)
-//                    .forEach(File::delete);
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
-//        //удалаяем сам пустой каталог
-//            //Files.delete(pathToDelete);
-//        }
+
+
+    public void sendFileInParts(ObjectEncoderOutputStream oeos, Path path){
 
         try {
-            Files.walkFileTree(pathToDelete, new SimpleFileVisitor<Path>() {
-                @Override
-                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                    System.out.println("delete file: " + file.toString());
-                    Files.delete(file);
-                    return FileVisitResult.CONTINUE;
+            InputStream isFile = new FileInputStream(path.toString());
+
+            long fileSize = Files.size(path);
+            long lastPackage;
+            if(fileSize%bufferSize > 0){
+                lastPackage = fileSize/bufferSize +1;
+            }else{
+                lastPackage = fileSize/bufferSize;
+            }
+
+
+            byte[] buffer = new byte[bufferSize];
+            int count = 0;
+            int i= 0;
+            while ((count = isFile.read(buffer)) != -1) {
+                i++;
+                boolean isLast;
+
+                if (lastPackage == i){
+                    isLast = true;
+                }else{
+                    isLast = false;
                 }
 
-                @Override
-                public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
-                    Files.delete(dir);
-                    System.out.println("delete dir: " + dir.toString());
-                    return FileVisitResult.CONTINUE;
+                AbstractMsg outObject;
+
+                if (count < bufferSize){
+                    outObject = new FileTransferMsg(path, Arrays.copyOfRange(buffer, 0, count),isLast, i==1);
+                }else{
+                    outObject = new FileTransferMsg(path,buffer,isLast,i == 1);
                 }
-            });
+                oeos.writeObject(outObject);
+            }
+            isFile.close();
         } catch (IOException e) {
             e.printStackTrace();
         }
 
+    }
 
-//        }
-//
-//        new Thread(() -> {
-//            try () {
-//                FileUtils.deleteDirectory(pathToDelete.toFile());
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-//        }).start();
+    public void sendFileInParts(ChannelHandlerContext ctx, Path path){
 
-//        fullFolderPath = rootDir + nickname;
+        try {
+            InputStream isFile = new FileInputStream(path.toString());
 
-//        try {
-//            Files.walk(pathToDirToDelete, FileVisitOption.FOLLOW_LINKS)
-//                    .sorted(Comparator.reverseOrder())
-//                    .forEach(path -> {
-//                        try {
-//                            Files.delete(path);
-//                        } catch (IOException e) {
-//                            e.printStackTrace();
-//                        }
-//                    });
-//            //Files.delete(pathToDirToDelete);
-//        } catch (IOException e) {
-//            e.printStackTrace();
-//        }
+            long fileSize = Files.size(path);
+            long lastPackage;
+            if(fileSize%bufferSize > 0){
+                lastPackage = fileSize/bufferSize +1;
+            }else{
+                lastPackage = fileSize/bufferSize;
+            }
+
+
+            byte[] buffer = new byte[bufferSize];
+            int count = 0;
+            int i= 0;
+            while ((count = isFile.read(buffer)) != -1) {
+                i++;
+                boolean isLast;
+
+                if (lastPackage == i){
+                    isLast = true;
+                }else{
+                    isLast = false;
+                }
+
+                AbstractMsg outObject;
+
+                if (count < bufferSize){
+                    outObject = new FileTransferMsg(path, Arrays.copyOfRange(buffer, 0, count),isLast, i==1);
+                }else{
+                    outObject = new FileTransferMsg(path,buffer,isLast,i == 1);
+                }
+                ctx.writeAndFlush(outObject);
+            }
+            isFile.close();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
     }
 
 }

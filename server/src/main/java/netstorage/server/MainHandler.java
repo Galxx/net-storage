@@ -2,7 +2,7 @@ package netstorage.server;
 
 
 import common.*;
-import messges.*;
+import messages.*;
 
 import io.netty.channel.Channel;
 import io.netty.channel.ChannelHandlerContext;
@@ -10,6 +10,8 @@ import io.netty.channel.ChannelInboundHandlerAdapter;
 import io.netty.util.ReferenceCountUtil;
 
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
@@ -21,10 +23,10 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
     private static int newClientIndex = 1;
     private String clientName;
     private boolean isLogged;
-    private FSWorker fsWorker;
+    private String currentFolderPath;
 
     public MainHandler() {
-        fsWorker = new FSWorker();
+
     }
 
     @Override
@@ -33,11 +35,10 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
         channels.add(ctx.channel());
         clientName = "Клиент #" + newClientIndex;
         newClientIndex++;
-        isLogged = true;
     }
 
     @Override
-    public void channelRead(ChannelHandlerContext ctx, Object msg) throws Exception {
+    public void channelRead(ChannelHandlerContext ctx, Object msg)  {
 
         try {
             if (msg == null)
@@ -49,44 +50,37 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
                 System.out.println("Server received wrong object!");
                 //logger.debug("Server received wrong object!");
             }
-        } finally {
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }finally {
             ReferenceCountUtil.release(msg);
         }
 
-//        System.out.println("Получено сообщение: " + s);
-//        if (s.startsWith("/")) {
-//            if (s.startsWith("/changename ")) { // /changename myname1
-//                String newNickname = s.split("\\s", 2)[1];
-//                broadcastMessage("SERVER", "Клиент " + clientName + " сменил ник на " + newNickname);
-//                clientName = newNickname;
-//            }
-//            return;
-//        }
-//        broadcastMessage(clientName, s);
     }
 
     //обрабатываем поступившее сообшение в зависимости от класса
     private void processMsg(AbstractMsg msg, ChannelHandlerContext ctx) {
 
-        System.out.println("username: " + clientName);
+        System.out.println("username processMsg: " + clientName);
 
         //обрабатываем остальные сообщения только, если прошли аутентификацию в БД
         if (isLogged) {
             if (msg instanceof FileTransferMsg) {
                 saveFileToStorage((FileTransferMsg) msg);
-//            } else if (msg instanceof CommandMsg) {
-//                System.out.println("Server received a command " +
-//                        ((CommandMsg) msg).getCommand());
+            } else if (msg instanceof CommandMsg) {
+                System.out.println("Server received a command " +
+                        ((CommandMsg) msg).getCommand());
 //                logger.debug("Server received a command", msg);
-//                processCommand((CommandMsg) msg, ctx);
+                processCommand((CommandMsg) msg, ctx);
             }
         } else {
             //вызываем проверку аутентификационных данных в БД
-//            if (msg instanceof AuthMsg) {
-//                System.out.println("Nickname in CloudServerHandler" +
-//                        ((AuthMsg) msg).getNickname());
-//                checkAuth((AuthMsg) msg, ctx);
-//            }
+            if (msg instanceof AuthMsg) {
+                System.out.println("Nickname in CloudServerHandler" +
+                        ((AuthMsg) msg).getNickname());
+                checkAuth((AuthMsg) msg, ctx);
+            }
         }
     }
 
@@ -94,18 +88,13 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
     //получаем файл в виде объекта, записываем его в хранилище, в папку пользователя
     private void saveFileToStorage(FileTransferMsg msg) {
 
-        String currentFolderPath = "server/filestorage";
         //получаем путь файла из локального хранилища
         Path filePath = Paths.get(msg.getPath());
 
-        //отбрасываем корневой каталог из локального хранилища
-        String relPath = filePath.subpath(1, filePath.getNameCount()).toString();
-
-        //складываем пути
-        Path newFilePath = Paths.get(currentFolderPath + "/" + relPath);
+        Path newFilePath = Paths.get(currentFolderPath + "\\" + filePath.getFileName().toString());
 
         //создаем файл в облачном хранилище
-        fsWorker.mkFile(newFilePath, msg.getData());
+        FSWorker.getInstance().mkFile(newFilePath, msg.getData(),msg.getislast(),msg.getisFirst());
 
     }
 
@@ -118,8 +107,103 @@ public class MainHandler extends ChannelInboundHandlerAdapter {
 
     @Override
     public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
+        System.out.println(cause.toString());
         System.out.println("Клиент " + clientName + " отвалился");
         channels.remove(ctx.channel());
         ctx.close();
     }
+
+    //обрабатываем поступившую команду и отправляем ответ на нее клиенту
+    private void processCommand(CommandMsg msg, ChannelHandlerContext ctx) {
+
+        switch (msg.getCommand()) {
+            case CommandMsg.LIST_FILES:
+                sendFileList(msg, ctx);
+                break;
+            case CommandMsg.DOWNLOAD_FILE:
+                sendFile(msg, ctx);
+                break;
+            case CommandMsg.DELETE:
+                deleteFile(msg, ctx);
+                break;
+            case CommandMsg.CREATE_DIR:
+                //createDirectory(msg);
+                break;
+        }
+    }
+
+    //отправить файл клиенту
+    private void sendFile(CommandMsg msg, ChannelHandlerContext ctx) {
+
+            Path filePath = Paths.get(currentFolderPath + "\\",
+                    (String) (msg.getObject()[0]));
+
+            FSWorker.getInstance().sendFileInParts(ctx,filePath);
+            sendData(new CommandMsg(CommandMsg.DOWNLOAD_FILE_OK), ctx);
+
+    }
+
+    private void checkAuth(AuthMsg incomingMsg, ChannelHandlerContext ctx) {
+        if (incomingMsg != null) {
+
+            //получаем значение nickname из Auth Handler
+            clientName = incomingMsg.getNickname();
+            if (clientName != null) {
+
+                //установить начальное значение папки просмотра
+                String rootDir = "server\\filestorage\\";
+                currentFolderPath = rootDir + clientName + "\\";
+
+                //проверим что он существует
+                Path path = Paths.get(currentFolderPath);
+                if (!Files.exists(path)) {
+                    FSWorker.getInstance().mkDir(path);
+                }
+
+
+                System.out.println("Client Auth OK");
+                isLogged = true;
+
+                sendData(new CommandMsg(CommandMsg.AUTH_OK), ctx);
+
+                //logger.debug("Client Auth OK");
+            } else {
+                System.out.println("Client not found");
+                isLogged = false;
+                //logger.debug("Client not found");
+            }
+        }
+    }
+
+    //метод для отправки данных
+    private void sendData(AbstractMsg msg, ChannelHandlerContext ctx) {
+        ctx.writeAndFlush(msg);
+    }
+
+    private void sendFileList(CommandMsg msg, ChannelHandlerContext ctx) {
+        System.out.println("Отправляем список файлов");
+        Object[] foldername = msg.getObject();
+        if(foldername.length > 0){
+            sendData(new FileListMsg(getClientFilesList(msg.getObject()[0])), ctx);
+        }else sendData(new FileListMsg(getClientFilesList(null)), ctx);
+    }
+
+    private List<String> getClientFilesList(Object folderName) {
+
+        List<String> fileList;
+        Path listFolderPath = Paths.get(currentFolderPath);
+
+        System.out.println("current currentFolderPath = " + currentFolderPath);
+        fileList = FSWorker.getInstance().listDir(listFolderPath);
+
+        return fileList;
+    }
+
+    private void deleteFile(CommandMsg msg, ChannelHandlerContext ctx) {
+
+        String folderName = currentFolderPath +"\\"+msg.getObject()[0];
+        FSWorker.getInstance().delFsObject(folderName);
+        sendData(new CommandMsg(CommandMsg.REFRESH_CLOUD), ctx);
+    }
+
 }

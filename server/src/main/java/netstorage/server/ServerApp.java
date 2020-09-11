@@ -29,6 +29,7 @@ public class ServerApp {
                             socketChannel.pipeline().addLast(
                                     new ObjectEncoder(),
                                     new ObjectDecoder(Integer.MAX_VALUE, ClassResolvers.cacheDisabled(null)),
+                                    new AuthMessageHandler(),
                                     new MainHandler());
                         }
                     });
