@@ -1,1 +1,1 @@
-net-storage
+GB net-storage
