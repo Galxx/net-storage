@@ -1,0 +1,1 @@
+Задеплоил серверную часть проекта https://github.com/Galxx/net-storage  в сети на AWS.
